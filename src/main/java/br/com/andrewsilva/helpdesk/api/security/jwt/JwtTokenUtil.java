@@ -2,6 +2,7 @@ package br.com.andrewsilva.helpdesk.api.security.jwt;
 
 import java.io.Serializable;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -50,10 +51,7 @@ public class JwtTokenUtil implements Serializable {
 	private Claims getClaimsFromToken(String token) {
 		Claims claims;
 		try {
-			claims = Jwts.parser()
-					.setSigningKey(secret)
-					.parseClaimsJws(token)
-					.getBody();
+			claims = Jwts.parser().setSigningKey(secret).parseClaimsJws(token).getBody();
 		} catch (Exception e) {
 			claims = null;
 
@@ -80,10 +78,7 @@ public class JwtTokenUtil implements Serializable {
 	private String doGenerateToken(Map<String, Object> claims) {
 		final Date createdDate = (Date) claims.get(CLAIM_KEY_CREATED);
 		final Date expirationDate = new Date(createdDate.getTime() + expiration * 1000);
-		return Jwts.builder()
-				.setClaims(claims)
-				.setExpiration(expirationDate)
-				.signWith(SignatureAlgorithm.HS512, secret)
+		return Jwts.builder().setClaims(claims).setExpiration(expirationDate).signWith(SignatureAlgorithm.HS512, secret)
 				.compact();
 	}
 
@@ -103,5 +98,11 @@ public class JwtTokenUtil implements Serializable {
 
 		return refreshedToken;
 	}
-	
+
+	public Boolean validateToken(String token, UserDetails userDetails) {
+		JwtUser user = (JwtUser) userDetails;
+		final String username = getUserNameFromToken(token);
+		return (username.equals(user.getUsername()) && !isTokenExpired(token));
+	}
+
 }
