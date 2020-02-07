@@ -8,26 +8,24 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import com.bionexo.internacionalapi.models.Usuario;
-import com.bionexo.internacionalapi.services.UsuarioService;
+import br.com.andrewsilva.helpdesk.api.entity.User;
+import br.com.andrewsilva.helpdesk.api.service.UserService;
 
 @Service
 public class JwtUserDetailsService implements UserDetailsService {
 
 	@Autowired
-	private UsuarioService usuarioService;
+	private UserService usuarioService;
 
 	@Override
 	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-		Optional<Usuario> usuario = usuarioService.buscarPorLogin(username);
+		User usuario = usuarioService.findByEmail(username);
 
-		if (usuario.isPresent()) {
-			return JwtUserFactory.create(usuario.get());
-
+		if (usuario == null) {
+			throw new UsernameNotFoundException("User not found with username: " + username);
+		} else {
+			return JwtUserFactory.create(usuario);
 		}
-
-		throw new UsernameNotFoundException("User not found with username: " + username);
-
 	}
 
 }

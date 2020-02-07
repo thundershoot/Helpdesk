@@ -6,8 +6,8 @@ import java.util.List;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
-import com.bionexo.internacionalapi.enums.PerfilEnum;
-import com.bionexo.internacionalapi.models.Usuario;
+import br.com.andrewsilva.helpdesk.api.entity.ProfileEnum;
+import br.com.andrewsilva.helpdesk.api.entity.User;
 
 
 
@@ -22,9 +22,9 @@ public class JwtUserFactory {
 	 * @param funcionario
 	 * @return JwtUser
 	 */
-	public static JwtUser create(Usuario usuario) {
-		return new JwtUser(usuario.getIdUsuario(), usuario.getLogin(), usuario.getCryptpassword(),
-				mapToGrantedAuthorities(usuario.getPerfil()));
+	public static JwtUser create(User usuario) {
+		return new JwtUser(usuario.getId(), usuario.getEmail(), usuario.getPassword(),
+				mapToGrantedAuthorities(usuario.getProfile()));
 	}
 
 	/**
@@ -33,9 +33,9 @@ public class JwtUserFactory {
 	 * @param perfilEnum
 	 * @return List<GrantedAuthority>
 	 */
-	private static List<GrantedAuthority> mapToGrantedAuthorities(PerfilEnum perfilEnum) {
+	private static List<GrantedAuthority> mapToGrantedAuthorities(ProfileEnum profileEnum) {
 		List<GrantedAuthority> authorities = new ArrayList<GrantedAuthority>();
-		authorities.add(new SimpleGrantedAuthority(perfilEnum.toString()));
+		authorities.add(new SimpleGrantedAuthority(profileEnum.toString()));
 		return authorities;
 	}
 
