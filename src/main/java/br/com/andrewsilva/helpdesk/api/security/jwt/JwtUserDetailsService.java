@@ -1,32 +1,30 @@
 package br.com.andrewsilva.helpdesk.api.security.jwt;
 
-import java.util.Optional;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
-import com.bionexo.internacionalapi.models.Usuario;
-import com.bionexo.internacionalapi.services.UsuarioService;
+import br.com.andrewsilva.helpdesk.api.entity.User;
+import br.com.andrewsilva.helpdesk.api.service.UserService;
 
 @Service
 public class JwtUserDetailsService implements UserDetailsService {
 
 	@Autowired
-	private UsuarioService usuarioService;
+	private UserService userService;
 
 	@Override
-	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-		Optional<Usuario> usuario = usuarioService.buscarPorLogin(username);
+	public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+		User usuario = userService.findByEmail(email);
 
-		if (usuario.isPresent()) {
-			return JwtUserFactory.create(usuario.get());
+		if (usuario == null) {
+			throw new UsernameNotFoundException("User not found with email: " + email);
 
+		} else {
+			return JwtUserFactory.create(usuario);
 		}
-
-		throw new UsernameNotFoundException("User not found with username: " + username);
 
 	}
 
