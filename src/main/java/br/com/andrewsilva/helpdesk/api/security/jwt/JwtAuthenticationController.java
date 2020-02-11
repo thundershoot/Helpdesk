@@ -13,6 +13,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
+import br.com.andrewsilva.helpdesk.api.entity.User;
+import br.com.andrewsilva.helpdesk.api.service.UserService;
+
 @RestController
 @CrossOrigin
 public class JwtAuthenticationController {
@@ -26,17 +29,22 @@ public class JwtAuthenticationController {
 	@Autowired
 	private JwtUserDetailsService userDetailsService;
 
+	@Autowired
+	private UserService userService;
+
 	@RequestMapping(value = "/authenticate", method = RequestMethod.POST)
 	public ResponseEntity<?> createAuthenticationToken(@RequestBody JwtRequest authenticationRequest) throws Exception {
-		authenticate(authenticationRequest.getUsername(), authenticationRequest.getPassword());
-		final UserDetails userDetails = userDetailsService.loadUserByUsername(authenticationRequest.getUsername());
+		authenticate(authenticationRequest.getEmail(), authenticationRequest.getPassword());
+		final UserDetails userDetails = userDetailsService.loadUserByUsername(authenticationRequest.getEmail());
 		final String token = jwtTokenUtil.generateToken(userDetails);
-		return ResponseEntity.ok(new JwtResponse(token));
+		final User user = userService.findByEmail(authenticationRequest.getEmail());
+		user.setPassword(null);
+		return ResponseEntity.ok(new JwtResponse(new CurrentUser(token, user).toString()));
 	}
 
-	private void authenticate(String username, String password) throws Exception {
+	private void authenticate(String email, String password) throws Exception {
 		try {
-			authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(username, password));
+			authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(email, password));
 		} catch (DisabledException e) {
 			throw new Exception("USER_DISABLED", e);
 		} catch (BadCredentialsException e) {
