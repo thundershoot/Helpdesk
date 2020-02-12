@@ -13,16 +13,16 @@ public class User {
 
 	@Id
 	private String id;
-	
+
 	@Indexed(unique = true)
 	@NotBlank(message = "Email required")
 	@Email(message = "Email invalid")
-	private String  email;
-	
+	private String email;
+
 	@NotBlank(message = "Password required")
 	@Size(min = 6)
 	private String password;
-	
+
 	private ProfileEnum profile;
 
 	public String getId() {
@@ -55,5 +55,10 @@ public class User {
 
 	public void setProfile(ProfileEnum profile) {
 		this.profile = profile;
+	}
+
+	@Override
+	public String toString() {
+		return "User [id=" + id + ", email=" + email + ", password=" + password + ", profile=" + profile + "]";
 	}
 }
