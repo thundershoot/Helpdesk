@@ -28,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.mongodb.DuplicateKeyException;
 
 import br.com.andrewsilva.helpdesk.api.entity.ChangeStatus;
+import br.com.andrewsilva.helpdesk.api.entity.ProfileEnum;
 import br.com.andrewsilva.helpdesk.api.entity.StatusEnum;
 import br.com.andrewsilva.helpdesk.api.entity.Ticket;
 import br.com.andrewsilva.helpdesk.api.entity.User;
@@ -92,7 +93,7 @@ public class TicketController {
 	}
 
 	@PutMapping
-	@PreAuthorize("hasAnyRole('TECNICIAN')")
+	@PreAuthorize("hasAnyRole('CUSTOMER')")
 	public ResponseEntity<Response<Ticket>> update(HttpServletRequest request, @RequestBody Ticket ticket,
 			BindingResult result) {
 
@@ -166,44 +167,99 @@ public class TicketController {
 		return ResponseEntity.ok(new Response<String>());
 	}
 
-//	@GetMapping(value = "{id}")
-//	@PreAuthorize("hasAnyRole('ADMIN')")
-//	public ResponseEntity<Response<User>> findById(@PathVariable("id") String id) {
-//
-//		Response<User> response = new Response<User>();
-//		Optional<User> user = userService.findById(id);
-//		if (user == null) {
-//			response.getErrors().add("Register not foung by id: " + id);
-//			return ResponseEntity.badRequest().body(response);
-//		}
-//
-//		response.setData(user.get());
-//		return ResponseEntity.ok(response);
-//	}
-//
-//	@DeleteMapping(value = "{id}")
-//	@PreAuthorize("hasAnyRole('ADMIN')")
-//	public ResponseEntity<Response<String>> delete(@PathVariable("id") String id) {
-//
-//		Response<String> response = new Response<String>();
-//		Optional<User> user = userService.findById(id);
-//		if (user == null) {
-//			response.getErrors().add("Register not foung by id: " + id);
-//			return ResponseEntity.badRequest().body(response);
-//
-//		}
-//
-//		userService.delete(id);
-//		return ResponseEntity.ok(new Response<String>());
-//	}
-//
-//	@GetMapping(value = "{page}/{count}")
-//	@PreAuthorize("hasAnyRole('ADMIN')")
-//	public ResponseEntity<Response<Page<User>>> findAll(@PathVariable("page") int page,
-//			@PathVariable("count") int count) {
-//		Response<Page<User>> response = new Response<Page<User>>();
-//		Page<User> users = userService.findAll(page, count);
-//		response.setData(users);
-//		return ResponseEntity.ok(response);
-//	}
+	@GetMapping(value = "{page}/{count}")
+	@PreAuthorize("hasAnyRole('CUSTOMER','TECNICIAN')")
+	public ResponseEntity<Response<Page<Ticket>>> findAll(HttpServletRequest request, @PathVariable("page") int page,
+			@PathVariable("count") int count) {
+		Response<Page<Ticket>> response = new Response<Page<Ticket>>();
+		Page<Ticket> tickets = null;
+		User userRequest = userFromRequest(request);
+		if (userRequest.getProfile().equals(ProfileEnum.ROLE_TECNICIAN)) {
+			tickets = ticketService.listTicket(page, count);
+		} else if (userRequest.getProfile().equals(ProfileEnum.ROLE_CUSTOMER)) {
+			tickets = ticketService.findByCurrentUser(page, count, userRequest.getId());
+		}
+
+		response.setData(tickets);
+		return ResponseEntity.ok(response);
+	}
+
+	@GetMapping(value = "{page}/{count}/{number}/{title}/{status}/{priority}/{assigned}")
+	@PreAuthorize("hasAnyRole('CUSTOMER','TECNICIAN')")
+	public ResponseEntity<Response<Page<Ticket>>> findByParams(HttpServletRequest request,
+			@PathVariable("page") int page, @PathVariable("count") int count, @PathVariable("number") Integer number,
+			@PathVariable("title") String title, @PathVariable("status") String status,
+			@PathVariable("priority") String priority, @PathVariable("assigned") boolean assigned) {
+
+		title = title.equals("uninformed") ? "" : title;
+		status = status.equals("uninformed") ? "" : status;
+		priority = title.equals("uninformed") ? "" : priority;
+
+		Response<Page<Ticket>> response = new Response<Page<Ticket>>();
+		Page<Ticket> tickets = null;
+		User userRequest = userFromRequest(request);
+
+		if (number > 0) {
+			tickets = ticketService.findByNumber(page, count, number);
+		} else {
+			if (userRequest.getProfile().equals(ProfileEnum.ROLE_TECNICIAN)) {
+				if (assigned) {
+					tickets = ticketService.findByParameterAndAssignedUser(page, count, title, status, priority,
+							userRequest.getId());
+				} else {
+					tickets = ticketService.findByParameters(page, count, title, status, priority);
+				}
+
+			} else if (userRequest.getProfile().equals(ProfileEnum.ROLE_CUSTOMER)) {
+				tickets = ticketService.findByParametersCurrentUser(page, count, title, status, priority,
+						userRequest.getId());
+			}
+		}
+
+		response.setData(tickets);
+		return ResponseEntity.ok(response);
+	}
+
+	@PutMapping(value = "{id}/{status}")
+	@PreAuthorize("hasAnyRole('CUSTOMER','TECNICIAN')")
+	public ResponseEntity<Response<Ticket>> changeStatus(HttpServletRequest request, @PathVariable("id") String id,
+			@PathVariable("Status") String status, @RequestBody Ticket ticket, BindingResult result) {
+
+		Response<Ticket> response = new Response<Ticket>();
+		try {
+			validateStatusTicket(id, status, result);
+			if (result.hasErrors()) {
+				result.getAllErrors().forEach(error -> response.getErrors().add(error.getDefaultMessage()));
+				return ResponseEntity.badRequest().body(response);
+			}
+			Ticket currentTicket = ticketService.findById(ticket.getId()).get();
+			currentTicket.setStatus(StatusEnum.getStatus(status));
+			if (status.equals("Assigned")) {
+				currentTicket.setAssignedUser(userFromRequest(request));
+			}
+
+			Ticket ticketPersisted = ticketService.createOrUpdate(currentTicket);
+			ChangeStatus changeStatus = new ChangeStatus();
+			changeStatus.setUserChange(userFromRequest(request));
+			changeStatus.setDateChangeStatus(new Date());
+			changeStatus.setStatus(StatusEnum.getStatus(status));
+			changeStatus.setTicket(ticketPersisted);
+			ticketService.createChangeStatus(changeStatus);
+			response.setData(ticketPersisted);
+		} catch (Exception e) {
+			response.getErrors().add(e.getMessage());
+			return ResponseEntity.badRequest().body(response);
+		}
+		return ResponseEntity.ok(response);
+	}
+
+	private void validateStatusTicket(String id, String status, BindingResult result) {
+		if (id == null || id.equals("")) {
+			result.addError(new ObjectError("Ticket", "Id not informed."));
+		}
+		if (status == null || status.equals("")) {
+			result.addError(new ObjectError("Ticket", "Status not informed."));
+		}
+	}
+
 }
