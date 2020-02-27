@@ -2,6 +2,7 @@ package br.com.andrewsilva.helpdesk.api.controllers;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
@@ -10,6 +11,7 @@ import javax.servlet.http.HttpServletRequest;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.mongodb.core.aggregation.AccumulatorOperators.Sum;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.mongodb.DuplicateKeyException;
 
+import br.com.andrewsilva.helpdesk.api.dto.Summary;
 import br.com.andrewsilva.helpdesk.api.entity.ChangeStatus;
 import br.com.andrewsilva.helpdesk.api.entity.ProfileEnum;
 import br.com.andrewsilva.helpdesk.api.entity.StatusEnum;
@@ -36,6 +39,7 @@ import br.com.andrewsilva.helpdesk.api.responses.Response;
 import br.com.andrewsilva.helpdesk.api.security.jwt.JwtTokenUtil;
 import br.com.andrewsilva.helpdesk.api.service.TicketService;
 import br.com.andrewsilva.helpdesk.api.service.UserService;
+import io.jsonwebtoken.ExpiredJwtException;
 
 @RestController
 @RequestMapping("/api/ticket")
@@ -82,9 +86,22 @@ public class TicketController {
 	}
 
 	private User userFromRequest(HttpServletRequest httpServletRequest) {
-		String token = httpServletRequest.getHeader("Authorization");
-		String email = jwtTokenUtil.getUsernameFromToken(token);
-		return userService.findByEmail(email);
+		String jwtToken = null;
+		String username = null;
+		String requestTokenHeader = httpServletRequest.getHeader("Authorization");
+		if (requestTokenHeader != null && requestTokenHeader.startsWith("Bearer ")) {
+			jwtToken = requestTokenHeader.substring(7);
+			try {
+				username = jwtTokenUtil.getUsernameFromToken(jwtToken);
+			} catch (IllegalArgumentException e) {
+				System.out.println("Unable to get JWT Token");
+			} catch (ExpiredJwtException e) {
+				System.out.println("JWT Token has expired");
+			}
+		} else {
+			System.out.println("JWT Token does not begin with Bearer String");
+		}
+		return userService.findByEmail(username);
 	}
 
 	private Integer generateNumber() {
@@ -105,14 +122,14 @@ public class TicketController {
 				return ResponseEntity.badRequest().body(response);
 			}
 			Ticket currentTicket = ticketService.findById(ticket.getId()).get();
-			currentTicket.setStatus(ticket.getStatus());
-			currentTicket.setUser(ticket.getUser());
-			currentTicket.setDate(ticket.getDate());
-			currentTicket.setNumber(ticket.getNumber());
-			if (ticket.getAssignedUser() != null) {
-				currentTicket.setAssignedUser(ticket.getAssignedUser());
+			ticket.setStatus(currentTicket.getStatus());
+			ticket.setUser(currentTicket.getUser());
+			ticket.setDate(currentTicket.getDate());
+			ticket.setNumber(currentTicket.getNumber());
+			if (currentTicket.getAssignedUser() != null) {
+				ticket.setAssignedUser(currentTicket.getAssignedUser());
 			}
-			Ticket ticketPersisted = ticketService.createOrUpdate(currentTicket);
+			Ticket ticketPersisted = ticketService.createOrUpdate(ticket);
 			response.setData(ticketPersisted);
 		} catch (Exception e) {
 			response.getErrors().add(e.getMessage());
@@ -222,12 +239,13 @@ public class TicketController {
 
 	@PutMapping(value = "{id}/{status}")
 	@PreAuthorize("hasAnyRole('CUSTOMER','TECNICIAN')")
-	public ResponseEntity<Response<Ticket>> changeStatus(HttpServletRequest request, @PathVariable("id") String id,
-			@PathVariable("Status") String status, @RequestBody Ticket ticket, BindingResult result) {
+	public ResponseEntity<Response<Ticket>> changeStatus(@PathVariable("id") String id,
+			@PathVariable("status") String status, HttpServletRequest request, @RequestBody Ticket ticket,
+			BindingResult result) {
 
 		Response<Ticket> response = new Response<Ticket>();
 		try {
-			validateStatusTicket(id, status, result);
+			validateChangeStatusTicket(id, status, result);
 			if (result.hasErrors()) {
 				result.getAllErrors().forEach(error -> response.getErrors().add(error.getDefaultMessage()));
 				return ResponseEntity.badRequest().body(response);
@@ -253,13 +271,60 @@ public class TicketController {
 		return ResponseEntity.ok(response);
 	}
 
-	private void validateStatusTicket(String id, String status, BindingResult result) {
+	private void validateChangeStatusTicket(String id, String status, BindingResult result) {
 		if (id == null || id.equals("")) {
 			result.addError(new ObjectError("Ticket", "Id not informed."));
 		}
 		if (status == null || status.equals("")) {
 			result.addError(new ObjectError("Ticket", "Status not informed."));
 		}
+	}
+
+	@GetMapping(value = "/summary")
+	public ResponseEntity<Response<Summary>> findSummary() {
+		Response<Summary> response = new Response<Summary>();
+
+		Summary summary = new Summary();
+		int amountNew = 0;
+		int amountResolved = 0;
+		int amountApproved = 0;
+		int amountDisapproved = 0;
+		int amountAssigned = 0;
+		int amountClosed = 0;
+
+		Iterable<Ticket> tickets = ticketService.findAll();
+		if (tickets != null) {
+			for (Iterator<Ticket> iterator = tickets.iterator(); iterator.hasNext();) {
+				Ticket ticket = (Ticket) iterator.next();
+				if (ticket.getStatus().equals(StatusEnum.New)) {
+					amountNew++;
+				}
+				if (ticket.getStatus().equals(StatusEnum.Resolved)) {
+					amountResolved++;
+				}
+				if (ticket.getStatus().equals(StatusEnum.Approved)) {
+					amountApproved++;
+				}
+				if (ticket.getStatus().equals(StatusEnum.Disapproved)) {
+					amountDisapproved++;
+				}
+				if (ticket.getStatus().equals(StatusEnum.Assigned)) {
+					amountAssigned++;
+				}
+				if (ticket.getStatus().equals(StatusEnum.Close)) {
+					amountClosed++;
+				}
+			}
+		}
+		summary.setAmountNew(amountNew);
+		summary.setAmountResolved(amountResolved);
+		summary.setAmountApproved(amountApproved);
+		summary.setAmountDisapproved(amountDisapproved);
+		summary.setAmountAssigned(amountAssigned);
+		summary.setAmountClosed(amountClosed);
+		response.setData(summary);
+		return ResponseEntity.ok(response);
+
 	}
 
 }
